@@ -244,20 +244,20 @@ func (c *S3Cache) uploadOutput(ctx context.Context, outputID string, client *s3.
 	}
 }
 
-func (c *S3Cache) KBDownloaded() int64 {
-	return c.bytesDownloaded.Load() / 1024
+func (c *S3Cache) BytesDownloaded() int64 {
+	return c.bytesDownloaded.Load()
 }
 
-func (c *S3Cache) KBUploaded() int64 {
-	return c.bytesUploaded.Load() / 1024
+func (c *S3Cache) BytesUploaded() int64 {
+	return c.bytesUploaded.Load()
 }
 
-func (c *S3Cache) AvgKBDownloadSpeed() float64 {
-	return c.avgBytesDownloadSpeed / 1024
+func (c *S3Cache) AvgBytesDownloadSpeed() float64 {
+	return c.avgBytesDownloadSpeed
 }
 
-func (c *S3Cache) AvgKBUploadSpeed() float64 {
-	return c.avgBytesUploadSpeed / 1024
+func (c *S3Cache) AvgBytesUploadSpeed() float64 {
+	return c.avgBytesUploadSpeed
 }
 
 func newAverage(oldAverage float64, count int64, newValue float64) float64 {

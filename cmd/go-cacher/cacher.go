@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -110,17 +111,22 @@ func main() {
 				log.Printf("cacher: closing; %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
 					p.Gets.Load(), p.GetHits.Load(), p.GetMisses.Load(), p.GetErrors.Load(), p.Puts.Load(), p.PutErrors.Load())
 				if p.RemoteCacheEnabled {
-					log.Printf("%d KB downloaded (%.2f/s); %d KB uploaded (%.2f/s)", p.KBDownloaded(), p.AvgKBDownloadSpeed(), p.KBUploaded(), p.AvgKBUploadSpeed())
+					log.Printf("%s downloaded (%s/s); %s uploaded (%s/s)",
+						formatBytes(float64(p.BytesDownloaded())),
+						formatBytes(p.AvgBytesDownloadSpeed()),
+						formatBytes(float64(p.BytesUploaded())),
+						formatBytes(p.AvgBytesUploadSpeed()),
+					)
 				}
 			}
 			return nil
 		},
-		Get:                dc.Get,
-		Put:                dc.Put,
-		KBDownloaded:       zeroIntFunc,
-		KBUploaded:         zeroIntFunc,
-		AvgKBDownloadSpeed: zeroFloatFunc,
-		AvgKBUploadSpeed:   zeroFloatFunc,
+		Get:                   dc.Get,
+		Put:                   dc.Put,
+		BytesDownloaded:       zeroIntFunc,
+		BytesUploaded:         zeroIntFunc,
+		AvgBytesDownloadSpeed: zeroFloatFunc,
+		AvgBytesUploadSpeed:   zeroFloatFunc,
 	}
 
 	if *serverBase != "" {
@@ -140,14 +146,42 @@ func main() {
 	if s3Cache != nil {
 		p.Get = s3Cache.Get
 		p.Put = s3Cache.Put
-		p.KBDownloaded = s3Cache.KBDownloaded
-		p.KBUploaded = s3Cache.KBUploaded
-		p.AvgKBDownloadSpeed = s3Cache.AvgKBDownloadSpeed
-		p.AvgKBUploadSpeed = s3Cache.AvgKBUploadSpeed
+		p.BytesDownloaded = s3Cache.BytesDownloaded
+		p.BytesUploaded = s3Cache.BytesUploaded
+		p.AvgBytesDownloadSpeed = s3Cache.AvgBytesDownloadSpeed
+		p.AvgBytesUploadSpeed = s3Cache.AvgBytesUploadSpeed
 		p.RemoteCacheEnabled = true
 	}
 
 	if err := p.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func formatBytes(size float64) string {
+	const (
+		kb = 1 << (10 * iota)
+		mb
+		gb
+		tb
+		pb
+		eb
+	)
+
+	switch {
+	case size < kb:
+		return fmt.Sprintf("%d B", size)
+	case size < mb:
+		return fmt.Sprintf("%.2f KB", size/float64(kb))
+	case size < gb:
+		return fmt.Sprintf("%.2f MB", size/float64(mb))
+	case size < tb:
+		return fmt.Sprintf("%.2f GB", size/float64(gb))
+	case size < pb:
+		return fmt.Sprintf("%.2f TB", size/float64(tb))
+	case size < eb:
+		return fmt.Sprintf("%.2f PB", size/float64(pb))
+	default:
+		return fmt.Sprintf("%.2f EB", size/float64(eb))
 	}
 }
