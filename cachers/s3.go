@@ -10,6 +10,7 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/aws/smithy-go"
 
@@ -29,6 +30,9 @@ type S3Cache struct {
 	verbose bool
 
 	s3Client *s3.Client
+
+	bytesDownloaded atomic.Int64
+	bytesUploaded   atomic.Int64
 }
 
 func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskCache, verbose bool) *S3Cache {
@@ -132,6 +136,7 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 		putBody = outputResult.Body
 	}
 	diskPath, err = c.diskCache.Put(ctx, actionID, outputID, av.Size, putBody)
+	c.bytesDownloaded.Add(av.Size)
 	return outputID, diskPath, err
 }
 func (c *S3Cache) actionKey(actionID string) string {
@@ -188,5 +193,14 @@ func (c *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 			ContentLength: size,
 		})
 	}
+	c.bytesUploaded.Add(size)
 	return
+}
+
+func (c *S3Cache) BytesDownloaded() int64 {
+	return c.bytesDownloaded.Load()
+}
+
+func (c *S3Cache) BytesUploaded() int64 {
+	return c.bytesUploaded.Load()
 }

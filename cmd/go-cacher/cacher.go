@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -102,13 +103,20 @@ func main() {
 	p = &cacheproc.Process{
 		Close: func() error {
 			if *verbose {
-				log.Printf("cacher: closing; %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
+				summary := fmt.Sprintf("cacher: closing; %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
 					p.Gets.Load(), p.GetHits.Load(), p.GetMisses.Load(), p.GetErrors.Load(), p.Puts.Load(), p.PutErrors.Load())
+				if p.RemoteCacheEnabled {
+					summary += fmt.Sprintf("; %d KB downloaded, %d KB uploaded", p.BytesDownloaded()/1024, p.BytesUploaded()/1024)
+				}
+				log.Print(summary)
 			}
 			return nil
 		},
 		Get: dc.Get,
 		Put: dc.Put,
+		BytesDownloaded: func() int64 {
+			return 0
+		},
 	}
 
 	if *serverBase != "" {
@@ -128,6 +136,9 @@ func main() {
 	if s3Cache != nil {
 		p.Get = s3Cache.Get
 		p.Put = s3Cache.Put
+		p.BytesDownloaded = s3Cache.BytesDownloaded
+		p.BytesUploaded = s3Cache.BytesUploaded
+		p.RemoteCacheEnabled = true
 	}
 
 	if err := p.Run(); err != nil {
