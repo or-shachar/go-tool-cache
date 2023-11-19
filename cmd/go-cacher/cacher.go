@@ -160,7 +160,8 @@ func main() {
 
 func formatBytes(size float64) string {
 	const (
-		kb = 1 << (10 * iota)
+		b = 1 << (10 * iota)
+		kb
 		mb
 		gb
 		tb
