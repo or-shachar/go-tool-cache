@@ -170,7 +170,7 @@ func formatBytes(size float64) string {
 
 	switch {
 	case size < kb:
-		return fmt.Sprintf("%d B", size)
+		return fmt.Sprintf("%.2f B", size)
 	case size < mb:
 		return fmt.Sprintf("%.2f KB", size/float64(kb))
 	case size < gb:
