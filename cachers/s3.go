@@ -36,8 +36,8 @@ type S3Cache struct {
 	uploadCount           int64
 	avgBytesDownloadSpeed float64
 	avgBytesUploadSpeed   float64
-	uploadStatsChan       chan *Stats
-	downloadStatsChan     chan *Stats
+	uploadStatsChan       chan Stats
+	downloadStatsChan     chan Stats
 	close                 sync.Once
 }
 
@@ -59,8 +59,8 @@ func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskC
 		diskCache:         disk,
 		prefix:            prefix,
 		verbose:           verbose,
-		uploadStatsChan:   make(chan *Stats, 10),
-		downloadStatsChan: make(chan *Stats, 10),
+		uploadStatsChan:   make(chan Stats, 10),
+		downloadStatsChan: make(chan Stats, 10),
 	}
 	cache.StartStatsGathering()
 	return cache
@@ -157,7 +157,7 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 		if c.verbose {
 			speed, err := DoAndMeasureSpeed(av.Size, downloadFunc)
 			if err == nil {
-				c.downloadStatsChan <- &Stats{
+				c.downloadStatsChan <- Stats{
 					Bytes: outputResult.ContentLength,
 					Speed: speed,
 				}
@@ -236,7 +236,7 @@ func (c *S3Cache) uploadOutput(ctx context.Context, outputID string, client *s3.
 	if c.verbose {
 		speed, err := DoAndMeasureSpeed(size, putObjectFunc)
 		if err == nil {
-			c.uploadStatsChan <- &Stats{
+			c.uploadStatsChan <- Stats{
 				Bytes: size,
 				Speed: speed,
 			}
