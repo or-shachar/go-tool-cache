@@ -146,7 +146,7 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 			if err != nil {
 				return err
 			}
-			c.bytesDownloaded.Add(av.Size)
+			c.bytesDownloaded.Add(outputResult.ContentLength)
 			return nil
 		}
 		if c.verbose {
