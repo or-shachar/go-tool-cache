@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -98,25 +97,30 @@ func main() {
 	}
 
 	dc := &cachers.DiskCache{Dir: dir}
-
+	zeroIntFunc := func() int64 {
+		return 0
+	}
+	zeroFloatFunc := func() float64 {
+		return 0
+	}
 	var p *cacheproc.Process
 	p = &cacheproc.Process{
 		Close: func() error {
 			if *verbose {
-				summary := fmt.Sprintf("cacher: closing; %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
+				log.Printf("cacher: closing; %d gets (%d hits, %d misses, %d errors); %d puts (%d errors)",
 					p.Gets.Load(), p.GetHits.Load(), p.GetMisses.Load(), p.GetErrors.Load(), p.Puts.Load(), p.PutErrors.Load())
 				if p.RemoteCacheEnabled {
-					summary += fmt.Sprintf("; %d KB downloaded, %d KB uploaded", p.BytesDownloaded()/1024, p.BytesUploaded()/1024)
+					log.Printf("%d KB downloaded (%.2f/s); %d KB uploaded (%.2f/s)", p.KBDownloaded(), p.AvgKBDownloadSpeed(), p.KBUploaded(), p.AvgKBUploadSpeed())
 				}
-				log.Print(summary)
 			}
 			return nil
 		},
-		Get: dc.Get,
-		Put: dc.Put,
-		BytesDownloaded: func() int64 {
-			return 0
-		},
+		Get:                dc.Get,
+		Put:                dc.Put,
+		KBDownloaded:       zeroIntFunc,
+		KBUploaded:         zeroIntFunc,
+		AvgKBDownloadSpeed: zeroFloatFunc,
+		AvgKBUploadSpeed:   zeroFloatFunc,
 	}
 
 	if *serverBase != "" {
@@ -136,8 +140,10 @@ func main() {
 	if s3Cache != nil {
 		p.Get = s3Cache.Get
 		p.Put = s3Cache.Put
-		p.BytesDownloaded = s3Cache.BytesDownloaded
-		p.BytesUploaded = s3Cache.BytesUploaded
+		p.KBDownloaded = s3Cache.KBDownloaded
+		p.KBUploaded = s3Cache.KBUploaded
+		p.AvgKBDownloadSpeed = s3Cache.AvgKBDownloadSpeed
+		p.AvgKBUploadSpeed = s3Cache.AvgKBUploadSpeed
 		p.RemoteCacheEnabled = true
 	}
 

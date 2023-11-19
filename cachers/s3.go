@@ -10,7 +10,9 @@ import (
 	"log"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/aws/smithy-go"
 
@@ -31,8 +33,14 @@ type S3Cache struct {
 
 	s3Client *s3.Client
 
-	bytesDownloaded atomic.Int64
-	bytesUploaded   atomic.Int64
+	bytesDownloaded       atomic.Int64
+	bytesUploaded         atomic.Int64
+	downloadCount         int64
+	uploadCount           int64
+	avgBytesDownloadSpeed float64
+	avgBytesUploadSpeed   float64
+	downloadsStatsMutex   *sync.Mutex
+	uploadStatsMutex      *sync.Mutex
 }
 
 func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskCache, verbose bool) *S3Cache {
@@ -45,11 +53,13 @@ func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskC
 	prefix := fmt.Sprintf("cache/%s/%s/%s/%s", cacheKey, arc, os, ver)
 	log.Printf("S3Cache: configured to s3://%s/%s", bucketName, prefix)
 	return &S3Cache{
-		Bucket:    bucketName,
-		cfg:       cfg,
-		diskCache: disk,
-		prefix:    prefix,
-		verbose:   verbose,
+		Bucket:              bucketName,
+		cfg:                 cfg,
+		diskCache:           disk,
+		prefix:              prefix,
+		verbose:             verbose,
+		downloadsStatsMutex: new(sync.Mutex),
+		uploadStatsMutex:    new(sync.Mutex),
 	}
 }
 
@@ -116,6 +126,7 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 	var putBody io.Reader
 	if av.Size == 0 {
 		putBody = bytes.NewReader(nil)
+		diskPath, err = c.diskCache.Put(ctx, actionID, outputID, av.Size, putBody)
 	} else {
 		outputKey := c.outputKey(outputID)
 		outputResult, getOutputErr := client.GetObject(ctx, &s3.GetObjectInput{
@@ -131,14 +142,31 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 			}
 			return "", "", fmt.Errorf("unexpected S3 get for %s:  %v", outputKey, getOutputErr)
 		}
-		defer outputResult.Body.Close()
-
-		putBody = outputResult.Body
+		downloadFunc := func() error {
+			defer outputResult.Body.Close()
+			putBody = outputResult.Body
+			diskPath, err = c.diskCache.Put(ctx, actionID, outputID, av.Size, putBody)
+			if err != nil {
+				return err
+			}
+			c.bytesDownloaded.Add(av.Size)
+			return nil
+		}
+		if c.verbose {
+			speed, err := DoAndMeasureSpeed(av.Size, downloadFunc)
+			if err == nil {
+				c.downloadsStatsMutex.Lock()
+				c.avgBytesDownloadSpeed = newAverage(c.avgBytesDownloadSpeed, c.downloadCount, speed)
+				c.downloadCount++
+				c.downloadsStatsMutex.Unlock()
+			}
+		} else {
+			err = downloadFunc()
+		}
 	}
-	diskPath, err = c.diskCache.Put(ctx, actionID, outputID, av.Size, putBody)
-	c.bytesDownloaded.Add(av.Size)
 	return outputID, diskPath, err
 }
+
 func (c *S3Cache) actionKey(actionID string) string {
 	return fmt.Sprintf("%s/actions/%s", c.prefix, actionID)
 }
@@ -185,22 +213,61 @@ func (c *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 		})
 	}
 	if size > 0 && err == nil {
-		outputKey := c.outputKey(outputID)
-		_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		c.uploadOutput(ctx, outputID, client, readerForS3, size)
+	}
+	c.bytesUploaded.Add(size)
+
+	return
+}
+
+func (c *S3Cache) uploadOutput(ctx context.Context, outputID string, client *s3.Client, readerForS3 bytes.Buffer, size int64) {
+	outputKey := c.outputKey(outputID)
+	putObjectFunc := func() error {
+		_, err := client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket:        &c.Bucket,
 			Key:           &outputKey,
 			Body:          &readerForS3,
 			ContentLength: size,
 		})
+		return err
 	}
-	c.bytesUploaded.Add(size)
-	return
+	if c.verbose {
+		speed, err := DoAndMeasureSpeed(size, putObjectFunc)
+		if err == nil {
+			c.uploadStatsMutex.Lock()
+			c.avgBytesUploadSpeed = newAverage(c.avgBytesUploadSpeed, c.uploadCount, speed)
+			c.uploadCount++
+			c.uploadStatsMutex.Unlock()
+		}
+	} else {
+		_ = putObjectFunc()
+	}
 }
 
-func (c *S3Cache) BytesDownloaded() int64 {
-	return c.bytesDownloaded.Load()
+func (c *S3Cache) KBDownloaded() int64 {
+	return c.bytesDownloaded.Load() / 1024
 }
 
-func (c *S3Cache) BytesUploaded() int64 {
-	return c.bytesUploaded.Load()
+func (c *S3Cache) KBUploaded() int64 {
+	return c.bytesUploaded.Load() / 1024
+}
+
+func (c *S3Cache) AvgKBDownloadSpeed() float64 {
+	return c.avgBytesDownloadSpeed / 1024
+}
+
+func (c *S3Cache) AvgKBUploadSpeed() float64 {
+	return c.avgBytesUploadSpeed / 1024
+}
+
+func newAverage(oldAverage float64, count int64, newValue float64) float64 {
+	return (oldAverage*float64(count) + newValue) / float64(count+1)
+}
+
+func DoAndMeasureSpeed(dataSize int64, functionOnData func() error) (float64, error) {
+	start := time.Now()
+	err := functionOnData()
+	elapsed := time.Since(start)
+	speed := float64(dataSize) / elapsed.Seconds()
+	return speed, err
 }

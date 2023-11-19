@@ -58,8 +58,10 @@ type Process struct {
 	Puts               atomic.Int64
 	PutErrors          atomic.Int64
 	RemoteCacheEnabled bool
-	BytesDownloaded    func() int64
-	BytesUploaded      func() int64
+	KBDownloaded       func() int64
+	KBUploaded         func() int64
+	AvgKBDownloadSpeed func() float64
+	AvgKBUploadSpeed   func() float64
 }
 
 func (p *Process) Run() error {
