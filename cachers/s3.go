@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,9 +47,7 @@ func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskC
 	arc := runtime.GOARCH
 	// get current operating system
 	os := runtime.GOOS
-	// get current version of Go
-	ver := strings.ReplaceAll(strings.ReplaceAll(runtime.Version(), " ", "-"), ":", "-")
-	prefix := fmt.Sprintf("cache/%s/%s/%s/%s", cacheKey, arc, os, ver)
+	prefix := fmt.Sprintf("cache/%s/%s/%s", cacheKey, arc, os)
 	log.Printf("S3Cache: configured to s3://%s/%s", bucketName, prefix)
 	return &S3Cache{
 		Bucket:              bucketName,
@@ -63,7 +60,7 @@ func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskC
 	}
 }
 
-func (c *S3Cache) client(ctx context.Context) (*s3.Client, error) {
+func (c *S3Cache) client() (*s3.Client, error) {
 	if c.s3Client != nil {
 		return c.s3Client, nil
 	}
@@ -87,7 +84,7 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 	if err == nil && outputID != "" {
 		return outputID, diskPath, nil
 	}
-	client, err := c.client(ctx)
+	client, err := c.client()
 	if err != nil {
 		if c.verbose {
 			log.Printf("error getting S3 client: %v", err)
@@ -195,7 +192,7 @@ func (c *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 		return "", err
 	}
 
-	client, err := c.client(ctx)
+	client, err := c.client()
 	if err != nil {
 		return "", err
 	}
