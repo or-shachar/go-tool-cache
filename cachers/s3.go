@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/aws/smithy-go"
@@ -28,8 +29,7 @@ type S3Cache struct {
 	// verbose optionally specifies whether to log verbose messages.
 	verbose bool
 
-	s3Client *s3.Client
-
+	s3Client              *s3.Client
 	bytesDownloaded       int64
 	bytesUploaded         int64
 	downloadCount         int64
@@ -38,6 +38,7 @@ type S3Cache struct {
 	avgBytesUploadSpeed   float64
 	uploadStatsChan       chan *Stats
 	downloadStatsChan     chan *Stats
+	close                 sync.Once
 }
 
 type Stats struct {
@@ -291,6 +292,8 @@ func (c *S3Cache) StartStatsGathering() {
 }
 
 func (c *S3Cache) Close() {
-	close(c.uploadStatsChan)
-	close(c.downloadStatsChan)
+	c.close.Do(func() {
+		close(c.uploadStatsChan)
+		close(c.downloadStatsChan)
+	})
 }
