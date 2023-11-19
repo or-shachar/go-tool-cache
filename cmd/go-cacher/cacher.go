@@ -151,6 +151,11 @@ func main() {
 		p.AvgBytesDownloadSpeed = s3Cache.AvgBytesDownloadSpeed
 		p.AvgBytesUploadSpeed = s3Cache.AvgBytesUploadSpeed
 		p.RemoteCacheEnabled = true
+		originalClose := p.Close
+		p.Close = func() error {
+			s3Cache.Close()
+			return originalClose()
+		}
 	}
 
 	if err := p.Run(); err != nil {

@@ -10,7 +10,6 @@ import (
 	"log"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/aws/smithy-go"
@@ -30,16 +29,23 @@ type S3Cache struct {
 	// verbose optionally specifies whether to log verbose messages.
 	verbose bool
 
-	s3Client *s3.Client
-
-	bytesDownloaded       atomic.Int64
-	bytesUploaded         atomic.Int64
+	s3Client              *s3.Client
+	bytesDownloaded       int64
+	bytesUploaded         int64
 	downloadCount         int64
 	uploadCount           int64
 	avgBytesDownloadSpeed float64
 	avgBytesUploadSpeed   float64
-	downloadsStatsMutex   *sync.Mutex
-	uploadStatsMutex      *sync.Mutex
+	uploadStatsChan       chan Stats
+	FinishedUploadStats   chan bool
+	done                  chan bool
+	downloadStatsChan     chan Stats
+	close                 sync.Once
+}
+
+type Stats struct {
+	Bytes int64
+	Speed float64
 }
 
 func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskCache, verbose bool) *S3Cache {
@@ -49,15 +55,18 @@ func NewS3Cache(bucketName string, cfg *aws.Config, cacheKey string, disk *DiskC
 	os := runtime.GOOS
 	prefix := fmt.Sprintf("cache/%s/%s/%s", cacheKey, arc, os)
 	log.Printf("S3Cache: configured to s3://%s/%s", bucketName, prefix)
-	return &S3Cache{
-		Bucket:              bucketName,
-		cfg:                 cfg,
-		diskCache:           disk,
-		prefix:              prefix,
-		verbose:             verbose,
-		downloadsStatsMutex: new(sync.Mutex),
-		uploadStatsMutex:    new(sync.Mutex),
+	cache := &S3Cache{
+		Bucket:            bucketName,
+		cfg:               cfg,
+		diskCache:         disk,
+		prefix:            prefix,
+		verbose:           verbose,
+		uploadStatsChan:   make(chan Stats),
+		downloadStatsChan: make(chan Stats, 100),
+		done:              make(chan bool),
 	}
+	cache.StartStatsGathering()
+	return cache
 }
 
 func (c *S3Cache) client() (*s3.Client, error) {
@@ -146,16 +155,17 @@ func (c *S3Cache) Get(ctx context.Context, actionID string) (outputID, diskPath 
 			if err != nil {
 				return err
 			}
-			c.bytesDownloaded.Add(outputResult.ContentLength)
 			return nil
 		}
 		if c.verbose {
 			speed, err := DoAndMeasureSpeed(av.Size, downloadFunc)
 			if err == nil {
-				c.downloadsStatsMutex.Lock()
-				c.avgBytesDownloadSpeed = newAverage(c.avgBytesDownloadSpeed, c.downloadCount, speed)
-				c.downloadCount++
-				c.downloadsStatsMutex.Unlock()
+				c.downloadStatsChan <- Stats{
+					Bytes: outputResult.ContentLength,
+					Speed: speed,
+				}
+			} else {
+				log.Printf("error downloading %s: %v", outputKey, err)
 			}
 		} else {
 			err = downloadFunc()
@@ -212,8 +222,6 @@ func (c *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 	if size > 0 && err == nil {
 		c.uploadOutput(ctx, outputID, client, readerForS3, size)
 	}
-	c.bytesUploaded.Add(size)
-
 	return
 }
 
@@ -231,10 +239,10 @@ func (c *S3Cache) uploadOutput(ctx context.Context, outputID string, client *s3.
 	if c.verbose {
 		speed, err := DoAndMeasureSpeed(size, putObjectFunc)
 		if err == nil {
-			c.uploadStatsMutex.Lock()
-			c.avgBytesUploadSpeed = newAverage(c.avgBytesUploadSpeed, c.uploadCount, speed)
-			c.uploadCount++
-			c.uploadStatsMutex.Unlock()
+			c.uploadStatsChan <- Stats{
+				Bytes: size,
+				Speed: speed,
+			}
 		}
 	} else {
 		_ = putObjectFunc()
@@ -242,11 +250,11 @@ func (c *S3Cache) uploadOutput(ctx context.Context, outputID string, client *s3.
 }
 
 func (c *S3Cache) BytesDownloaded() int64 {
-	return c.bytesDownloaded.Load()
+	return c.bytesDownloaded
 }
 
 func (c *S3Cache) BytesUploaded() int64 {
-	return c.bytesUploaded.Load()
+	return c.bytesUploaded
 }
 
 func (c *S3Cache) AvgBytesDownloadSpeed() float64 {
@@ -267,4 +275,30 @@ func DoAndMeasureSpeed(dataSize int64, functionOnData func() error) (float64, er
 	elapsed := time.Since(start)
 	speed := float64(dataSize) / elapsed.Seconds()
 	return speed, err
+}
+
+func (c *S3Cache) StartStatsGathering() {
+	go func() {
+		for s := range c.uploadStatsChan {
+			c.bytesUploaded += s.Bytes
+			c.avgBytesUploadSpeed = newAverage(c.avgBytesUploadSpeed, c.uploadCount, s.Speed)
+			c.uploadCount++
+		}
+		c.done <- true
+	}()
+	go func() {
+		for s := range c.downloadStatsChan {
+			c.bytesDownloaded += s.Bytes
+			c.avgBytesDownloadSpeed = newAverage(c.avgBytesDownloadSpeed, c.downloadCount, s.Speed)
+			c.downloadCount++
+		}
+		c.done <- true
+	}()
+}
+
+func (c *S3Cache) Close() {
+	close(c.downloadStatsChan)
+	close(c.uploadStatsChan)
+	<-c.done
+	<-c.done
 }
