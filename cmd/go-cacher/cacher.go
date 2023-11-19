@@ -150,6 +150,10 @@ func main() {
 		p.BytesUploaded = s3Cache.BytesUploaded
 		p.AvgBytesDownloadSpeed = s3Cache.AvgBytesDownloadSpeed
 		p.AvgBytesUploadSpeed = s3Cache.AvgBytesUploadSpeed
+		p.Close = func() error {
+			s3Cache.Close()
+			return p.Close()
+		}
 		p.RemoteCacheEnabled = true
 	}
 
