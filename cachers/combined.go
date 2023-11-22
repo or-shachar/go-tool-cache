@@ -91,7 +91,8 @@ func (l *CombinedCache) Get(ctx context.Context, actionID string) (outputID, dis
 	}
 	return outputID, diskPath, nil
 }
-func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size int64, body io.Reader) (diskPath string, err error) {
+
+func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size int64, body io.Reader) (string, error) {
 	pr, pw := io.Pipe()
 	diskPutCh := make(chan any, 1)
 	go func() {
@@ -117,14 +118,12 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 
 		putBody = io.TeeReader(body, pw)
 	}
-	_, err = l.putsMetrics.DoWithMeasure(size, func() (string, error) {
+	// tolerate remote write errors
+	_, _ = l.putsMetrics.DoWithMeasure(size, func() (string, error) {
 		e := l.remoteCache.Put(ctx, actionID, outputID, size, putBody)
 		return "", e
 	})
 	pw.Close()
-	if err != nil {
-		return "", err
-	}
 	v := <-diskPutCh
 	if err, ok := v.(error); ok {
 		log.Printf("HTTPCache.Put local disk error: %v", err)
