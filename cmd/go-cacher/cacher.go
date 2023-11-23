@@ -143,8 +143,8 @@ func main() {
 
 	var localCache cachers.LocalCache = cachers.NewSimpleDiskCache(*verbose, dir)
 	ctx, cancel := context.WithCancel(context.Background())
-	proc := cacheproc.NewCacheProc(getCache(ctx, localCache, *verbose))
 	defer cancel()
+	proc := cacheproc.NewCacheProc(getCache(ctx, localCache, *verbose))
 	if err := proc.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
