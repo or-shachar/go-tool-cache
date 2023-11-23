@@ -25,6 +25,15 @@ import (
 
 const defaultCacheKey = "v1"
 
+type optionalEnvVarName string
+
+const (
+	s3CacheRegion        = optionalEnvVarName("GOCACHE_AWS_REGION")
+	s3AwsAccessKey       = optionalEnvVarName("GOCACHE_AWS_ACCESS_KEY")
+	s3AwsSecretAccessKey = optionalEnvVarName("GOCACHE_AWS_SECRET_ACCESS_KEY")
+	s3AwsCredsProfile    = optionalEnvVarName("GOCACHE_AWS_CREDS_PROFILE")
+)
+
 var (
 	serverBase = flag.String("cache-server", "", "optional cache server HTTP prefix (scheme and authority only); should be low latency. empty means to not use one.")
 	verbose    = flag.Bool("verbose", false, "be verbose")
@@ -32,13 +41,13 @@ var (
 
 func getAwsConfigFromEnv() (*aws.Config, error) {
 	// read from env
-	awsRegion, awsRegionOk := os.LookupEnv("GOCACHE_AWS_REGION")
-	if !awsRegionOk {
+	awsRegion := os.Getenv(string(s3CacheRegion))
+	if awsRegion != "" {
 		return nil, nil
 	}
-	accessKey, accessKeyOk := os.LookupEnv("GOCACHE_AWS_ACCESS_KEY")
-	secretAccessKey, secretKeyOk := os.LookupEnv("GOCACHE_AWS_SECRET_ACCESS_KEY")
-	if accessKeyOk && secretKeyOk {
+	accessKey := os.Getenv(string(s3AwsAccessKey))
+	secretAccessKey := os.Getenv(string(s3AwsSecretAccessKey))
+	if accessKey != "" && secretAccessKey != "" {
 		cfg, err := config.LoadDefaultConfig(context.TODO(),
 			config.WithRegion(awsRegion),
 			config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
@@ -52,8 +61,8 @@ func getAwsConfigFromEnv() (*aws.Config, error) {
 		}
 		return &cfg, nil
 	}
-	credsProfile, credsProfileOk := os.LookupEnv("GOCACHE_CREDS_PROFILE")
-	if credsProfileOk {
+	credsProfile := os.Getenv(string(s3AwsCredsProfile))
+	if credsProfile != "" {
 		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(awsRegion), config.WithSharedConfigProfile(credsProfile))
 		if err != nil {
 			return nil, err
@@ -82,7 +91,7 @@ func maybeS3Cache() (cachers.RemoteCache, error) {
 	return s3Cache, nil
 }
 
-func getFinalCacher(local cachers.LocalCache, remote cachers.RemoteCache, verbose bool) cachers.LocalCache {
+func getCache(local cachers.LocalCache, remote cachers.RemoteCache, verbose bool) cachers.LocalCache {
 	if remote != nil {
 		return cachers.NewCombinedCache(local, remote, verbose)
 	}
@@ -111,7 +120,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	proc := cacheproc.NewCacheProc(getFinalCacher(localCache, s3Cache, *verbose))
+	proc := cacheproc.NewCacheProc(getCache(localCache, s3Cache, *verbose))
 	if err := proc.Run(); err != nil {
 		log.Fatal(err)
 	}
