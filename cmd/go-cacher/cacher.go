@@ -32,6 +32,8 @@ const (
 	s3AwsAccessKey       = optionalEnvVarName("GOCACHE_AWS_ACCESS_KEY")
 	s3AwsSecretAccessKey = optionalEnvVarName("GOCACHE_AWS_SECRET_ACCESS_KEY")
 	s3AwsCredsProfile    = optionalEnvVarName("GOCACHE_AWS_CREDS_PROFILE")
+	s3BucketName         = optionalEnvVarName("GOCACHE_S3_BUCKET")
+	s3CacheKey           = optionalEnvVarName("GOCACHE_CACHE_KEY")
 )
 
 var (
@@ -77,12 +79,12 @@ func maybeS3Cache() (cachers.RemoteCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	bucket, ok := os.LookupEnv("GOCACHE_S3_BUCKET")
-	if !ok || awsConfig == nil {
+	bucket := os.Getenv(string(s3BucketName))
+	if bucket == "" || awsConfig == nil {
 		// We need at least name of bucket and valid aws config
 		return nil, nil
 	}
-	cacheKey := os.Getenv("GOCACHE_CACHE_KEY")
+	cacheKey := os.Getenv(string(s3CacheKey))
 	if cacheKey == "" {
 		cacheKey = defaultCacheKey
 	}
