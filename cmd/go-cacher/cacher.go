@@ -28,18 +28,18 @@ const defaultCacheKey = "v1"
 // All the following env variable names are optional
 const (
 	// path to local disk directory. defaults to os.UserCacheDir()/go-cacher
-	diskCacheDir = "GOCACHE_DISK_DIR"
+	envVarDiskCacheDir = "GOCACHE_DISK_DIR"
 
 	// S3 cache
-	s3CacheRegion        = "GOCACHE_AWS_REGION"
-	s3AwsAccessKey       = "GOCACHE_AWS_ACCESS_KEY"
-	s3AwsSecretAccessKey = "GOCACHE_AWS_SECRET_ACCESS_KEY"
-	s3AwsCredsProfile    = "GOCACHE_AWS_CREDS_PROFILE"
-	s3BucketName         = "GOCACHE_S3_BUCKET"
-	s3CacheKey           = "GOCACHE_CACHE_KEY"
+	envVarS3CacheRegion        = "GOCACHE_AWS_REGION"
+	envVarS3AwsAccessKey       = "GOCACHE_AWS_ACCESS_KEY"
+	envVarS3AwsSecretAccessKey = "GOCACHE_AWS_SECRET_ACCESS_KEY"
+	envVarS3AwsCredsProfile    = "GOCACHE_AWS_CREDS_PROFILE"
+	envVarS3BucketName         = "GOCACHE_S3_BUCKET"
+	envVarS3CacheKey           = "GOCACHE_CACHE_KEY"
 
 	// HTTP cache - optional cache server HTTP prefix (scheme and authority only);
-	httpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
+	envVarHttpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
 )
 
 var (
@@ -48,12 +48,12 @@ var (
 
 func getAwsConfigFromEnv() (*aws.Config, error) {
 	// read from env
-	awsRegion := os.Getenv(s3CacheRegion)
+	awsRegion := os.Getenv(envVarS3CacheRegion)
 	if awsRegion != "" {
 		return nil, nil
 	}
-	accessKey := os.Getenv(s3AwsAccessKey)
-	secretAccessKey := os.Getenv(s3AwsSecretAccessKey)
+	accessKey := os.Getenv(envVarS3AwsAccessKey)
+	secretAccessKey := os.Getenv(envVarS3AwsSecretAccessKey)
 	if accessKey != "" && secretAccessKey != "" {
 		cfg, err := config.LoadDefaultConfig(context.TODO(),
 			config.WithRegion(awsRegion),
@@ -68,7 +68,7 @@ func getAwsConfigFromEnv() (*aws.Config, error) {
 		}
 		return &cfg, nil
 	}
-	credsProfile := os.Getenv(s3AwsCredsProfile)
+	credsProfile := os.Getenv(envVarS3AwsCredsProfile)
 	if credsProfile != "" {
 		cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(awsRegion), config.WithSharedConfigProfile(credsProfile))
 		if err != nil {
@@ -84,12 +84,12 @@ func maybeS3Cache() (cachers.RemoteCache, error) {
 	if err != nil {
 		return nil, err
 	}
-	bucket := os.Getenv(s3BucketName)
+	bucket := os.Getenv(envVarS3BucketName)
 	if bucket == "" || awsConfig == nil {
 		// We need at least name of bucket and valid aws config
 		return nil, nil
 	}
-	cacheKey := os.Getenv(s3CacheKey)
+	cacheKey := os.Getenv(envVarS3CacheKey)
 	if cacheKey == "" {
 		cacheKey = defaultCacheKey
 	}
@@ -119,7 +119,7 @@ func getCache(local cachers.LocalCache, verbose bool) cachers.LocalCache {
 }
 
 func maybeHttpCache() (cachers.RemoteCache, error) {
-	serverBase := os.Getenv(httpCacheServerBase)
+	serverBase := os.Getenv(envVarHttpCacheServerBase)
 	if serverBase == "" {
 		return nil, nil
 	}
@@ -128,7 +128,7 @@ func maybeHttpCache() (cachers.RemoteCache, error) {
 
 func main() {
 	flag.Parse()
-	dir := os.Getenv(diskCacheDir)
+	dir := os.Getenv(envVarDiskCacheDir)
 	if dir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
