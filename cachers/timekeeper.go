@@ -26,7 +26,7 @@ type metric struct {
 
 func newTimeKeeper() *timeKeeper {
 	return &timeKeeper{
-		metricsChan: make(chan metric, 100),
+		metricsChan: make(chan metric, 1024),
 	}
 }
 

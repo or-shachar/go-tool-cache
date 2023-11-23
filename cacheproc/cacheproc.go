@@ -44,18 +44,12 @@ func NewCacheProc(cache cachers.LocalCache) *Process {
 	}
 }
 
-func (p *Process) Run() error {
+func (p *Process) Run(ctx context.Context) error {
 	br := bufio.NewReader(os.Stdin)
 	jd := json.NewDecoder(br)
 
 	bw := bufio.NewWriter(os.Stdout)
 	je := json.NewEncoder(bw)
-	if err := p.cache.Start(); err != nil {
-		return err
-	}
-	defer func() {
-		_ = p.close()
-	}()
 	caps := []wire.Cmd{"get", "put", "close"}
 	if err := je.Encode(&wire.Response{KnownCommands: caps}); err != nil {
 		return err
@@ -66,10 +60,13 @@ func (p *Process) Run() error {
 
 	var wmu sync.Mutex // guards writing responses
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	wg, ctx := errgroup.WithContext(ctx)
+	if err := p.cache.Start(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		_ = p.close()
+	}()
 	for {
 		var req wire.Request
 		if err := jd.Decode(&req); err != nil {
@@ -133,7 +130,7 @@ func (p *Process) handleGet(ctx context.Context, req *wire.Request, res *wire.Re
 	}
 	res.OutputID, err = hex.DecodeString(outputID)
 	if err != nil {
-		return fmt.Errorf("invalid OutputID: %v", err)
+		return fmt.Errorf("invalid OutputID: %w", err)
 	}
 	fi, err := os.Stat(diskPath)
 	if err != nil {
