@@ -41,17 +41,17 @@ func (l *CombinedCache) Kind() string {
 	return "combined"
 }
 
-func (l *CombinedCache) Start() error {
-	err := l.localCache.Start()
+func (l *CombinedCache) Start(ctx context.Context) error {
+	err := l.localCache.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("local cache start failed: %w", err)
 	}
-	err = l.remoteCache.Start()
+	err = l.remoteCache.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("remote cache start failed: %w", err)
 	}
-	l.putsMetrics.Start()
-	l.getsMetrics.Start()
+	l.putsMetrics.Start(ctx)
+	l.getsMetrics.Start(ctx)
 	return nil
 }
 
@@ -120,18 +120,21 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 }
 
 func (l *CombinedCache) Close() error {
-	err := l.localCache.Close()
-	if err != nil {
-		err = fmt.Errorf("local cache stop failed: %w", err)
+	var errAll error
+	if err := l.localCache.Close(); err != nil {
+		errAll = errors.Join(fmt.Errorf("local cache stop failed: %w", err), errAll)
 	}
-	err = l.remoteCache.Close()
-	if err != nil {
-		err = errors.Join(fmt.Errorf("remote cache stop failed: %w", err))
+	if err := l.remoteCache.Close(); err != nil {
+		errAll = errors.Join(fmt.Errorf("remote cache stop failed: %w", err), errAll)
 	}
-	l.putsMetrics.Stop()
-	l.getsMetrics.Stop()
+	if err := l.putsMetrics.Stop(); err != nil {
+		errAll = errors.Join(fmt.Errorf("puts metrics stop failed: %w", err), errAll)
+	}
+	if err := l.getsMetrics.Stop(); err != nil {
+		errAll = errors.Join(fmt.Errorf("gets metrics stop failed: %w", err), errAll)
+	}
 	if l.verbose {
 		log.Printf("[%s]\tDownloads: %s, Uploads %s", l.remoteCache.Kind(), l.getsMetrics.Summary(), l.putsMetrics.Summary())
 	}
-	return err
+	return errAll
 }

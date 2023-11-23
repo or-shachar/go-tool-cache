@@ -40,7 +40,7 @@ func NewSimpleDiskCache(verbose bool, dir string) *SimpleDiskCache {
 
 var _ LocalCache = &SimpleDiskCache{}
 
-func (dc *SimpleDiskCache) Start() error {
+func (dc *SimpleDiskCache) Start(ctx context.Context) error {
 	log.Printf("[%s]\tlocal cache in  %s", dc.Kind(), dc.dir)
 	return nil
 }
