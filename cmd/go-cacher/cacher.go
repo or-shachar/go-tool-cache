@@ -25,19 +25,25 @@ import (
 
 const defaultCacheKey = "v1"
 
+// All the following env variable names are optional
 const (
-	// All the following env variable names are optional
+	// path to local disk directory. defaults to os.UserCacheDir()/go-cacher
+	diskCacheDir = "GOCACHE_DISK_DIR"
+
+	// S3 cache
 	s3CacheRegion        = "GOCACHE_AWS_REGION"
 	s3AwsAccessKey       = "GOCACHE_AWS_ACCESS_KEY"
 	s3AwsSecretAccessKey = "GOCACHE_AWS_SECRET_ACCESS_KEY"
 	s3AwsCredsProfile    = "GOCACHE_AWS_CREDS_PROFILE"
 	s3BucketName         = "GOCACHE_S3_BUCKET"
 	s3CacheKey           = "GOCACHE_CACHE_KEY"
+
+	// HTTP cache - optional cache server HTTP prefix (scheme and authority only);
+	httpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
 )
 
 var (
-	serverBase = flag.String("cache-server", "", "optional cache server HTTP prefix (scheme and authority only); should be low latency. empty means to not use one.")
-	verbose    = flag.Bool("verbose", false, "be verbose")
+	verbose = flag.Bool("verbose", false, "be verbose")
 )
 
 func getAwsConfigFromEnv() (*aws.Config, error) {
@@ -113,15 +119,16 @@ func getCache(local cachers.LocalCache, verbose bool) cachers.LocalCache {
 }
 
 func maybeHttpCache() (cachers.RemoteCache, error) {
-	if *serverBase == "" {
+	serverBase := os.Getenv(httpCacheServerBase)
+	if serverBase == "" {
 		return nil, nil
 	}
-	return cachers.NewHttpCache(*serverBase, *verbose), nil
+	return cachers.NewHttpCache(serverBase, *verbose), nil
 }
 
 func main() {
 	flag.Parse()
-	dir := os.Getenv("GOCACHE_DISK_DIR")
+	dir := os.Getenv(diskCacheDir)
 	if dir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
