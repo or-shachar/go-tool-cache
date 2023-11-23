@@ -49,7 +49,7 @@ var (
 func getAwsConfigFromEnv() (*aws.Config, error) {
 	// read from env
 	awsRegion := os.Getenv(envVarS3CacheRegion)
-	if awsRegion != "" {
+	if awsRegion == "" {
 		return nil, nil
 	}
 	accessKey := os.Getenv(envVarS3AwsAccessKey)
