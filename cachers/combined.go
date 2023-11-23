@@ -79,8 +79,8 @@ func (l *CombinedCache) Get(ctx context.Context, actionID string) (outputID, dis
 
 func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size int64, body io.Reader) (string, error) {
 	pr, pw := io.Pipe()
-	diskpathCh := make(chan string, 1)
-	errorsCh := make(chan error, 1)
+	diskPathCh := make(chan string, 1)
+	errCh := make(chan error, 1)
 	go func() {
 		var putBody io.Reader = pr
 		if size == 0 {
@@ -88,9 +88,9 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 		}
 		diskPath, err := l.localCache.Put(ctx, actionID, outputID, size, putBody)
 		if err != nil {
-			errorsCh <- err
+			errCh <- err
 		} else {
-			diskpathCh <- diskPath
+			diskPathCh <- diskPath
 		}
 	}()
 
@@ -111,10 +111,10 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 	})
 	pw.Close()
 	select {
-	case err := <-errorsCh:
+	case err := <-errCh:
 		log.Printf("[%s]\terror: %v", l.localCache.Kind(), err)
 		return "", err
-	case diskPath := <-diskpathCh:
+	case diskPath := <-diskPathCh:
 		return diskPath, nil
 	}
 }
