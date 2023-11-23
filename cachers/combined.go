@@ -88,8 +88,9 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 		if size == 0 {
 			putBody = bytes.NewReader(nil)
 		}
-		diskPath, err = l.localCache.Put(ctx, actionID, outputID, size, putBody)
-		return err
+		var err2 error
+		diskPath, err2 = l.localCache.Put(ctx, actionID, outputID, size, putBody)
+		return err2
 	})
 
 	var putBody io.Reader

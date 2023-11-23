@@ -113,16 +113,13 @@ func writeTempFile(dest string, r io.Reader) (string, int64, error) {
 	}
 	fileName := tf.Name()
 	defer func() {
+		_ = tf.Close()
 		if err != nil {
-			_ = tf.Close()
 			_ = os.Remove(fileName)
 		}
 	}()
 	size, err := io.Copy(tf, r)
 	if err != nil {
-		return "", 0, err
-	}
-	if err := tf.Close(); err != nil {
 		return "", 0, err
 	}
 	return fileName, size, nil
@@ -133,8 +130,10 @@ func writeAtomic(dest string, r io.Reader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := os.Rename(tempFile, dest); err != nil {
+	defer func() {
 		_ = os.Remove(tempFile)
+	}()
+	if err := os.Rename(tempFile, dest); err != nil {
 		return 0, err
 	}
 	return size, nil
