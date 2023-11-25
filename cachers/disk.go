@@ -131,9 +131,11 @@ func writeAtomic(dest string, r io.Reader) (int64, error) {
 		return 0, err
 	}
 	defer func() {
-		_ = os.Remove(tempFile)
+		if err != nil {
+			_ = os.Remove(tempFile)
+		}
 	}()
-	if err := os.Rename(tempFile, dest); err != nil {
+	if err = os.Rename(tempFile, dest); err != nil {
 		return 0, err
 	}
 	return size, nil
