@@ -114,7 +114,7 @@ func (h *logHandler) Logf(cls logging.Classification, format string, args ...int
 		l = slog.LevelDebug
 	}
 
-	h.Handle(context.Background(), slog.Record{
+	_ = h.Handle(context.Background(), slog.Record{
 		Level:   l,
 		Message: fmt.Sprintf(format, args...),
 	})
@@ -166,8 +166,8 @@ func main() {
 		os.Exit(1)
 	}
 	if logLevel <= slog.LevelInfo {
-		fmt.Fprintln(os.Stderr, "disk stats: \n"+diskCacher.GetCounts().Summary())
-		fmt.Fprintln(os.Stderr, "s3 stats: \n"+cacher.GetCounts().Summary())
+		_, _ = fmt.Fprintln(os.Stderr, "disk stats: \n"+diskCacher.GetCounts().Summary())
+		_, _ = fmt.Fprintln(os.Stderr, "s3 stats: \n"+cacher.GetCounts().Summary())
 	}
 	if *flagMetCSV != "" {
 		f, err := os.Create(*flagMetCSV)
@@ -175,7 +175,7 @@ func main() {
 			slog.Error(fmt.Sprintf("failed to create metrics file: %v", err))
 		} else {
 			defer f.Close()
-			cacher.GetCounts().CSV(f, true)
+			_ = cacher.GetCounts().CSV(f, true)
 		}
 
 	}
