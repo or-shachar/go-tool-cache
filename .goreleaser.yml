@@ -1,6 +1,6 @@
 builds:
   - binary: go-cacher
-    main: ./cmd/go-cacher
+    main: ./cmd/go-cacher-s3
     goos:
       - darwin
       - linux
