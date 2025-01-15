@@ -8,7 +8,6 @@ package cacheproc
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/bradfitz/go-tool-cache/cachers"
+	"github.com/bradfitz/go-tool-cache/internal/sbytes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/bradfitz/go-tool-cache/wire"
@@ -93,7 +93,7 @@ func (p *Process) Run(ctx context.Context) error {
 			if int64(len(bodyb)) != req.BodySize {
 				log.Fatalf("only got %d bytes of declared %d", len(bodyb), req.BodySize)
 			}
-			req.Body = bytes.NewReader(bodyb)
+			req.Body = sbytes.NewBuffer(bodyb)
 		}
 		wg.Go(func() error {
 			res := &wire.Response{ID: req.ID}
@@ -151,7 +151,8 @@ func (p *Process) handleGet(ctx context.Context, req *wire.Request, res *wire.Re
 		return fmt.Errorf("not a regular file")
 	}
 	res.Size = fi.Size()
-	res.TimeNanos = fi.ModTime().UnixNano()
+	mt := fi.ModTime()
+	res.Time = &mt
 	res.DiskPath = diskPath
 	return nil
 }
@@ -165,7 +166,7 @@ func (p *Process) handlePut(ctx context.Context, req *wire.Request, res *wire.Re
 	}()
 	var body = req.Body
 	if body == nil {
-		body = bytes.NewReader(nil)
+		body = sbytes.NewBuffer(nil)
 	}
 	diskPath, err := p.cache.Put(ctx, actionID, outputID, req.BodySize, body)
 	if err != nil {
