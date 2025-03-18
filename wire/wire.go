@@ -7,7 +7,10 @@
 // the cache interface.
 package wire
 
-import "io"
+import (
+	"io"
+	"time"
+)
 
 // Cmd is a command that can be issued to a child process.
 //
@@ -80,10 +83,10 @@ type Response struct {
 
 	// For Get requests.
 
-	Miss      bool   `json:",omitempty"` // cache miss
-	OutputID  []byte `json:",omitempty"`
-	Size      int64  `json:",omitempty"`
-	TimeNanos int64  `json:",omitempty"` // TODO(bradfitz): document
+	Miss     bool       `json:",omitempty"` // cache miss
+	OutputID []byte     `json:",omitempty"`
+	Size     int64      `json:",omitempty"`
+	Time     *time.Time `json:",omitempty"` // when the object was put in the cache (optional; used for cache expiration)
 
 	// DiskPath is the absolute path on disk of the OutputID corresponding
 	// a "get" request's ActionID (on cache hit) or a "put" request's
