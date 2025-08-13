@@ -193,7 +193,7 @@ func OutputFilename(dir, outputID string) string {
 	if len(outputID) < 4 || len(outputID) > 1000 {
 		return ""
 	}
-	for i := range outputID {
+	for _, b := range outputID {
 		b := outputID[i]
 		if b >= '0' && b <= '9' || b >= 'a' && b <= 'f' {
 			continue
