@@ -63,7 +63,10 @@ func (s *S3Cache) Get(ctx context.Context, actionID string) (outputID string, si
 		}
 		return "", 0, nil, fmt.Errorf("unexpected S3 get for %s:  %w", actionKey, getOutputErr)
 	}
-	contentSize := outputResult.ContentLength
+	var contentSize int64
+	if outputResult.ContentLength != nil {
+		contentSize = *outputResult.ContentLength
+	}
 	outputID, ok := outputResult.Metadata[outputIDMetadataKey]
 	if !ok || outputID == "" {
 		return "", 0, nil, fmt.Errorf("outputId not found in metadata")
@@ -80,7 +83,7 @@ func (s *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 		Bucket:        &s.bucket,
 		Key:           &actionKey,
 		Body:          body,
-		ContentLength: size,
+		ContentLength: &size,
 		Metadata: map[string]string{
 			outputIDMetadataKey: outputID,
 		},
