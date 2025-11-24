@@ -57,7 +57,7 @@ func (c *HTTPCache) Get(ctx context.Context, actionID string) (outputID string, 
 	if err != nil {
 		return "", 0, nil, err
 	}
-	defer res.Body.Close()
+	defer res.Body.Close() //nolint:errcheck
 	if res.StatusCode == http.StatusNotFound {
 		return "", 0, nil, nil
 	}
@@ -107,6 +107,7 @@ func (c *HTTPCache) Put(ctx context.Context, actionID, outputID string, size int
 		log.Printf("error PUT /%s/%s: %v", actionID, outputID, err)
 		return err
 	}
+	//nolint:errcheck
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusNoContent {
 		all, _ := io.ReadAll(io.LimitReader(res.Body, 4<<10))

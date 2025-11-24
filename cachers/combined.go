@@ -71,7 +71,7 @@ func (l *CombinedCache) Get(ctx context.Context, actionID string) (string, strin
 		return "", "", nil
 	}
 	diskPath, err = l.getsMetrics.DoWithMeasure(size, func() (string, error) {
-		defer output.Close()
+		defer output.Close() //nolint:errcheck
 		return l.localCache.Put(ctx, actionID, outputID, size, output)
 	})
 	if err != nil {
