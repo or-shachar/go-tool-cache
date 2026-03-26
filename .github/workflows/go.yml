@@ -37,7 +37,7 @@ jobs:
         github.event.comment.author_association == 'COLLABORATOR'))
     strategy:
       matrix:
-        go: [ '1.23', '1.24', '1.25' ]
+        go: [ '1.23', '1.24', '1.25', '1.26' ]
     steps:
       - name: Get PR branch for comment trigger
         if: github.event_name == 'issue_comment'
