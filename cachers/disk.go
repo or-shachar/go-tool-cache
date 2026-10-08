@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -69,6 +70,12 @@ func (dc *SimpleDiskCache) Get(_ context.Context, actionID string) (outputID, di
 }
 
 func (dc *SimpleDiskCache) Put(_ context.Context, actionID, objectID string, size int64, body io.Reader) (diskPath string, _ error) {
+	// An empty objectID would produce "o-" as the on-disk filename and
+	// collide across all callers; the index entry would be meaningless.
+	// Reject at the boundary rather than silently corrupting the cache.
+	if objectID == "" {
+		return "", errors.New("empty outputID")
+	}
 	file := filepath.Join(dc.dir, fmt.Sprintf("o-%s", objectID))
 
 	// Special case empty files; they're both common and easier to do race-free.
