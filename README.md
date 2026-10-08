@@ -71,3 +71,17 @@ If `GOCACHE_S3_BUCKET` is set but credentials or region cannot be resolved, the 
 
 - `GOCACHE_HTTP_SERVER_BASE` - Base URL of a `go-cacher-server`
   (scheme + authority only, e.g. `http://localhost:31364`).
+
+### Metrics CSV
+
+Set `GOCACHE_METRICS_CSV` to a file path to write one CSV row per
+cache layer (local disk, remote S3/HTTP) at the end of each run.
+Columns: `timestamp, kind, gets, hits, misses, puts, get_errors, put_errors`.
+
+The file is overwritten on each run. For cross-run history, point at
+per-run filenames (e.g. `/tmp/go-cacher-$CI_JOB_ID.csv`) and aggregate
+externally.
+
+Setting this flag enables the internal stats wrappers that `--verbose`
+also enables, so you'll also see one summary log line per layer at
+shutdown.
