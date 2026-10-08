@@ -71,3 +71,23 @@ If `GOCACHE_S3_BUCKET` is set but credentials or region cannot be resolved, the 
 
 - `GOCACHE_HTTP_SERVER_BASE` - Base URL of a `go-cacher-server`
   (scheme + authority only, e.g. `http://localhost:31364`).
+
+### Async remote writes (opt-in)
+
+By default, `Put` waits for both the local disk write and the remote upload
+before returning to `cmd/go`. On slow or distant remotes (cross-region S3
+from CI) this stalls the build on every cache miss. Opt in to a background
+worker pool that returns to the caller as soon as the local write
+completes:
+
+- `GOCACHE_REMOTE_ASYNC_WORKERS` - number of upload goroutines. 0 (default)
+  keeps the synchronous behavior; any positive value enables async writes.
+- `GOCACHE_REMOTE_ASYNC_QUEUE` - buffered queue depth. Defaults to `10 * workers`.
+- `GOCACHE_REMOTE_ASYNC_BLOCK` - set to `1` to make `Put` block on a full
+  queue (lossless, with back-pressure to `cmd/go`). Default is to drop the
+  put and increment a counter logged at shutdown.
+
+Upload errors in async mode are logged and counted but not surfaced to
+`cmd/go` — once `Put` returned, the originating request is already gone.
+Reads are always synchronous (within a single build, `cmd/go` never
+re-reads an action it just wrote).

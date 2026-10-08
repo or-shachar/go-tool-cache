@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -43,6 +44,17 @@ const (
 	// instead of the AWS-resolved one. If GOCACHE_AWS_REGION is empty,
 	// a dummy region of "us-east-1" is used so the SDK accepts the config.
 	envVarS3CacheURL = "GOCACHE_S3_URL"
+
+	// Async remote-write pool. GOCACHE_REMOTE_ASYNC_WORKERS > 0 enables the
+	// pool and sets the number of upload goroutines; applies to any
+	// configured remote (S3 or HTTP). Default 0 = synchronous puts.
+	// GOCACHE_REMOTE_ASYNC_QUEUE sets the buffered-queue depth (default
+	// 10 * workers). GOCACHE_REMOTE_ASYNC_BLOCK=1 switches queue-full
+	// behavior from "drop and count" to "block the caller" — opt in for
+	// lossless uploads at the cost of occasional back-pressure.
+	envVarRemoteAsyncWorkers = "GOCACHE_REMOTE_ASYNC_WORKERS"
+	envVarRemoteAsyncQueue   = "GOCACHE_REMOTE_ASYNC_QUEUE"
+	envVarRemoteAsyncBlock   = "GOCACHE_REMOTE_ASYNC_BLOCK"
 
 	// HTTP cache - optional cache server HTTP prefix (scheme and authority only);
 	envVarHttpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
@@ -148,12 +160,48 @@ func getCache(ctx context.Context, env Env, verbose bool) cachers.LocalCache {
 	}
 
 	if remote != nil {
+		if wrapped, err := maybeAsync(env, remote); err != nil {
+			log.Fatal(err)
+		} else if wrapped != nil {
+			remote = wrapped
+		}
 		return cachers.NewCombinedCache(local, remote, verbose)
 	}
 	if verbose {
 		return cachers.NewLocalCacheStates(local)
 	}
 	return local
+}
+
+// maybeAsync wraps remote in an AsyncRemoteCache when GOCACHE_REMOTE_ASYNC_WORKERS
+// is set to a positive integer. Returns (nil, nil) when the env var is unset
+// or 0 (sync behavior preserved).
+func maybeAsync(env Env, remote cachers.RemoteCache) (cachers.RemoteCache, error) {
+	workers, err := envInt(env, envVarRemoteAsyncWorkers, 0)
+	if err != nil {
+		return nil, err
+	}
+	if workers <= 0 {
+		return nil, nil
+	}
+	queueLen, err := envInt(env, envVarRemoteAsyncQueue, workers*10)
+	if err != nil {
+		return nil, err
+	}
+	block := env.Get(envVarRemoteAsyncBlock) == "1"
+	return cachers.NewAsyncRemoteCache(remote, workers, queueLen, block), nil
+}
+
+func envInt(env Env, key string, def int) (int, error) {
+	v := env.Get(key)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s=%q: %w", key, v, err)
+	}
+	return n, nil
 }
 
 func maybeHttpCache(env Env) (cachers.RemoteCache, error) {
