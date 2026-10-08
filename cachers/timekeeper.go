@@ -1,61 +1,35 @@
 package cachers
 
 import (
-	"context"
 	"fmt"
+	"sync"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
-// timeKeeper can be used to measure time and bytes of operations
-// It works in async channel to not block the main thread
+// timeKeeper records the bytes and durations of cache operations and reports
+// a human-readable summary. Updates are serialized under a mutex; the record
+// path is called inline from Get/Put, so callers block only for the handful of
+// instructions needed to update the counters.
+//
+// The previous implementation used a buffered channel and a background
+// aggregator goroutine. That added two failure modes with no real benefit:
+// senders could block when the 1024-slot buffer filled under load, and
+// closing the channel at shutdown could race with in-flight DoWithMeasure
+// calls and panic. A mutex is cheaper than both.
 type timeKeeper struct {
+	mu                sync.Mutex
 	Count             int64
 	TotalBytes        int64
 	AvgBytesPerSecond float64
-	metricsChan       chan metric
-	wg                *errgroup.Group
-}
-
-// metric holds data of single op event: size in bytes and duration
-type metric struct {
-	bytes    int64
-	duration time.Duration
 }
 
 func newTimeKeeper() *timeKeeper {
-	return &timeKeeper{
-		metricsChan: make(chan metric, 1024),
-	}
-}
-
-func (c *timeKeeper) Start(ctx context.Context) {
-	c.wg, _ = errgroup.WithContext(ctx)
-	c.wg.Go(func() error {
-		for m := range c.metricsChan {
-			c.TotalBytes += m.bytes
-			// Skip speed samples that would produce NaN/Inf (sub-nanosecond
-			// durations on fast ops, or zero-byte transfers). TotalBytes
-			// still reflects every event; only the running average is
-			// updated from well-defined samples.
-			if m.duration <= 0 || m.bytes <= 0 {
-				continue
-			}
-			speed := float64(m.bytes) / m.duration.Seconds()
-			c.AvgBytesPerSecond = newAverage(c.AvgBytesPerSecond, c.Count, speed)
-			c.Count++
-		}
-		return nil
-	})
-}
-
-func (c *timeKeeper) Stop() error {
-	close(c.metricsChan)
-	return c.wg.Wait()
+	return &timeKeeper{}
 }
 
 func (c *timeKeeper) Summary() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return fmt.Sprintf("%s (%s/sec)",
 		formatBytes(float64(c.TotalBytes)), formatBytes(c.AvgBytesPerSecond))
 }
@@ -69,12 +43,25 @@ func (c *timeKeeper) DoWithMeasure(bytesCount int64, f func() (string, error)) (
 	s, err := f()
 	duration := time.Since(start)
 	if err == nil {
-		c.metricsChan <- metric{
-			bytes:    bytesCount,
-			duration: duration,
-		}
+		c.record(bytesCount, duration)
 	}
 	return s, err
+}
+
+func (c *timeKeeper) record(bytes int64, duration time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.TotalBytes += bytes
+	// Skip speed samples that would produce NaN/Inf (sub-nanosecond
+	// durations on very fast ops, or zero-byte transfers). TotalBytes
+	// still reflects every event; only the running average is updated
+	// from well-defined samples.
+	if duration <= 0 || bytes <= 0 {
+		return
+	}
+	speed := float64(bytes) / duration.Seconds()
+	c.AvgBytesPerSecond = newAverage(c.AvgBytesPerSecond, c.Count, speed)
+	c.Count++
 }
 
 // formatBytes formats a number of bytes into a human-readable string.

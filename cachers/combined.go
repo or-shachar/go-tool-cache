@@ -53,8 +53,6 @@ func (l *CombinedCache) Start(ctx context.Context) error {
 		_ = l.localCache.Close()
 		return fmt.Errorf("remote cache start failed: %w", err)
 	}
-	l.putsMetrics.Start(ctx)
-	l.getsMetrics.Start(ctx)
 	return nil
 }
 
@@ -124,12 +122,6 @@ func (l *CombinedCache) Close() error {
 	}
 	if err := l.remoteCache.Close(); err != nil {
 		errAll = errors.Join(fmt.Errorf("remote cache stop failed: %w", err), errAll)
-	}
-	if err := l.putsMetrics.Stop(); err != nil {
-		errAll = errors.Join(fmt.Errorf("puts metrics stop failed: %w", err), errAll)
-	}
-	if err := l.getsMetrics.Stop(); err != nil {
-		errAll = errors.Join(fmt.Errorf("gets metrics stop failed: %w", err), errAll)
 	}
 	if l.verbose {
 		log.Printf("[%s]\tDownloads: %s, Uploads %s", l.remoteCache.Kind(), l.getsMetrics.Summary(), l.putsMetrics.Summary())
