@@ -42,12 +42,28 @@ Defaulting to cache dir /home/bradfitz/.cache/go-cacher ...
 cacher: closing; 808 gets (808 hits, 0 misses, 0 errors); 0 puts (0 errors)
 ```
 
-## S3 Support
-We support S3 backend for caching.
-You can connect to S3 backend by setting the following parameters:
+## Configuration
+
+### Local disk
+- `GOCACHE_DISK_DIR` - (Optional) Directory for the local on-disk cache.
+  Defaults to `<os.UserCacheDir()>/go-cacher`.
+
+### Remote backends
+
+At most one remote backend is used. If both are configured, **S3 takes
+precedence over HTTP**.
+
+#### S3
+
+Set the following to enable the S3 remote cache:
 - `GOCACHE_S3_BUCKET` - Name of S3 bucket
 - `GOCACHE_AWS_REGION` - AWS Region of bucket
-- `GOCACHE_AWS_ACCESS_KEY` + `GOCACHE_AWS_SECRET_KEY` / `GOCACHE_AWS_CREDS_PROFILE` - Direct credentials or creds profile to use.
+- `GOCACHE_AWS_ACCESS_KEY` + `GOCACHE_AWS_SECRET_ACCESS_KEY` / `GOCACHE_AWS_CREDS_PROFILE` - Direct credentials or creds profile to use.
 - `GOCACHE_CACHE_KEY` - (Optional, default `v1`) Unique key
 
-The cache would be stored to `s3://<bucket>/cache/<cache_key>/<architecture>/<os>/<go-version>`
+The cache would be stored to `s3://<bucket>/cache/<cache_key>/<architecture>/<os>/`
+
+#### HTTP
+
+- `GOCACHE_HTTP_SERVER_BASE` - Base URL of a `go-cacher-server`
+  (scheme + authority only, e.g. `http://localhost:31364`).
