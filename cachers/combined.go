@@ -136,3 +136,15 @@ func (l *CombinedCache) Close() error {
 	}
 	return errAll
 }
+
+// VisitCounts walks the wrapped local and remote caches so a top-level
+// collector sees per-layer counts (via the stats wrappers, when present).
+// CombinedCache itself holds no Counts.
+func (l *CombinedCache) VisitCounts(fn func(kind string, c *Counts)) {
+	if v, ok := l.localCache.(CountsVisitor); ok {
+		v.VisitCounts(fn)
+	}
+	if v, ok := l.remoteCache.(CountsVisitor); ok {
+		v.VisitCounts(fn)
+	}
+}
