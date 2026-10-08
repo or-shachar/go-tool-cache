@@ -150,7 +150,8 @@ func (p *Process) handleGet(ctx context.Context, req *wire.Request, res *wire.Re
 		return fmt.Errorf("not a regular file")
 	}
 	res.Size = fi.Size()
-	res.TimeNanos = fi.ModTime().UnixNano()
+	mt := fi.ModTime()
+	res.Time = &mt
 	res.DiskPath = diskPath
 	return nil
 }
