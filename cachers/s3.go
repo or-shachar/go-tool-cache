@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"sync"
 
 	"github.com/aws/smithy-go"
 
@@ -33,6 +34,10 @@ type S3Cache struct {
 	// verbose optionally specifies whether to log verbose messages.
 	verbose  bool
 	s3Client s3Client
+
+	// warnAccessDenied logs an IAM warning at most once per cache instance,
+	// so a misconfigured policy doesn't silently cost every build its hit rate.
+	warnAccessDenied sync.Once
 }
 
 var _ RemoteCache = &S3Cache{}
@@ -54,10 +59,22 @@ func (s *S3Cache) Get(ctx context.Context, actionID string) (outputID string, si
 		Bucket: &s.bucket,
 		Key:    &actionKey,
 	})
-	if isNotFoundError(getOutputErr) {
-		// handle object not found
+	switch s3ErrorCode(getOutputErr) {
+	case "NoSuchKey":
 		return "", 0, nil, nil
-	} else if getOutputErr != nil {
+	case "AccessDenied":
+		// Some S3 setups return AccessDenied instead of NoSuchKey when the
+		// caller lacks s3:ListBucket. Preserve the existing miss semantics,
+		// but surface the misconfig once per process so a broken IAM policy
+		// doesn't silently keep hit rate at 0%.
+		s.warnAccessDenied.Do(func() {
+			log.Printf("[%s]\tS3 GetObject returned AccessDenied on s3://%s/%s — treating as cache miss. "+
+				"If this is unexpected, verify the IAM policy grants s3:GetObject (and ideally s3:ListBucket) on the bucket.",
+				s.Kind(), s.bucket, actionKey)
+		})
+		return "", 0, nil, nil
+	}
+	if getOutputErr != nil {
 		if s.verbose {
 			log.Printf("error S3 get for %s:  %v", actionKey, getOutputErr)
 		}
@@ -90,8 +107,19 @@ func (s *S3Cache) Put(ctx context.Context, actionID, outputID string, size int64
 	}, func(options *s3.Options) {
 		options.RetryMaxAttempts = 1 // We cannot perform seek in Body
 	})
-	if err != nil && s.verbose {
-		log.Printf("error S3 put for %s:  %v", actionKey, err)
+	if err != nil {
+		// AccessDenied on Put is almost always an IAM problem the operator
+		// wants to see, even if the surrounding CombinedCache tolerates
+		// remote write errors. Log it once per process regardless of verbose.
+		if s3ErrorCode(err) == "AccessDenied" {
+			s.warnAccessDenied.Do(func() {
+				log.Printf("[%s]\tS3 PutObject returned AccessDenied on s3://%s/%s. "+
+					"Verify the IAM policy grants s3:PutObject on the bucket; remote cache writes are being dropped.",
+					s.Kind(), s.bucket, actionKey)
+			})
+		} else if s.verbose {
+			log.Printf("error S3 put for %s:  %v", actionKey, err)
+		}
 	}
 	return
 }
@@ -121,15 +149,18 @@ func NewS3Cache(client s3Client, bucketName string, cacheKey string, verbose boo
 	return cache
 }
 
-func isNotFoundError(err error) bool {
-	if err != nil {
-		var ae smithy.APIError
-		if errors.As(err, &ae) {
-			code := ae.ErrorCode()
-			return code == "AccessDenied" || code == "NoSuchKey"
-		}
+// s3ErrorCode returns the smithy API error code for err, or "" if err is nil
+// or not a smithy.APIError. Lets callers switch on specific S3 codes
+// (e.g. "NoSuchKey", "AccessDenied") instead of lumping them together.
+func s3ErrorCode(err error) string {
+	if err == nil {
+		return ""
 	}
-	return false
+	var ae smithy.APIError
+	if errors.As(err, &ae) {
+		return ae.ErrorCode()
+	}
+	return ""
 }
 
 func (s *S3Cache) actionKey(actionID string) string {
