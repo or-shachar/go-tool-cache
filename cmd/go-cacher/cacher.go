@@ -46,6 +46,12 @@ const (
 
 	// HTTP cache - optional cache server HTTP prefix (scheme and authority only);
 	envVarHttpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
+
+	// Metrics CSV output. When set to a file path, the cacher writes one
+	// CSV row per Counts-bearing layer in the cache chain at exit. The
+	// file is overwritten; point at per-run filenames (e.g. $CI_JOB_ID.csv)
+	// and aggregate externally for cross-run history.
+	envVarMetricsCSV = "GOCACHE_METRICS_CSV"
 )
 
 var (
@@ -147,10 +153,13 @@ func getCache(ctx context.Context, env Env, verbose bool) cachers.LocalCache {
 		}
 	}
 
+	// Stats wrappers are needed for both verbose logs and CSV export.
+	wantStats := verbose || env.Get(envVarMetricsCSV) != ""
+
 	if remote != nil {
-		return cachers.NewCombinedCache(local, remote, verbose)
+		return cachers.NewCombinedCache(local, remote, wantStats)
 	}
-	if verbose {
+	if wantStats {
 		return cachers.NewLocalCacheStates(local)
 	}
 	return local
@@ -186,7 +195,17 @@ func main() {
 
 	cache := getCache(ctx, env, *verbose)
 	proc := cacheproc.NewCacheProc(cache)
-	if err := proc.Run(ctx); err != nil {
-		log.Fatal(err)
+	runErr := proc.Run(ctx)
+
+	// Write metrics even if Run returned an error — the counts collected
+	// before the failure are still useful for post-mortem.
+	if path := env.Get(envVarMetricsCSV); path != "" {
+		if err := cachers.WriteStatsCSV(cache, path); err != nil {
+			log.Printf("failed to write metrics CSV to %s: %v", path, err)
+		}
+	}
+
+	if runErr != nil {
+		log.Fatal(runErr)
 	}
 }
