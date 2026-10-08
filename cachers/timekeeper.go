@@ -35,6 +35,13 @@ func (c *timeKeeper) Start(ctx context.Context) {
 	c.wg.Go(func() error {
 		for m := range c.metricsChan {
 			c.TotalBytes += m.bytes
+			// Skip speed samples that would produce NaN/Inf (sub-nanosecond
+			// durations on fast ops, or zero-byte transfers). TotalBytes
+			// still reflects every event; only the running average is
+			// updated from well-defined samples.
+			if m.duration <= 0 || m.bytes <= 0 {
+				continue
+			}
 			speed := float64(m.bytes) / m.duration.Seconds()
 			c.AvgBytesPerSecond = newAverage(c.AvgBytesPerSecond, c.Count, speed)
 			c.Count++
