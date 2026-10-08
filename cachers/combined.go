@@ -81,6 +81,17 @@ func (l *CombinedCache) Get(ctx context.Context, actionID string) (string, strin
 }
 
 func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size int64, body io.Reader) (diskPath string, err error) {
+	// Fast path for already-in-memory bodies.
+	//
+	// cacheproc.Run reads each put body fully into []byte before dispatching
+	// (see the "stream this" TODO in cacheproc.go), so in production the
+	// body here is always a plain *bytes.Reader. The streaming fallback
+	// below exists for callers using the cachers package directly with a
+	// true io.Reader; keep it so this remains a drop-in CombinedCache.
+	if br, ok := body.(*bytes.Reader); ok && size > 0 {
+		return l.putBytes(ctx, actionID, outputID, size, br)
+	}
+
 	pr, pw := io.Pipe()
 	wg, _ := errgroup.WithContext(ctx)
 	wg.Go(func() error {
@@ -115,6 +126,35 @@ func (l *CombinedCache) Put(ctx context.Context, actionID, outputID string, size
 	}
 	return diskPath, nil
 
+}
+
+// putBytes handles the common in-memory case without io.Pipe/TeeReader.
+// Both local and remote Puts run concurrently against independent
+// bytes.Readers over the same backing slice. This also avoids the subtle
+// failure mode in the streaming path, where an early return from
+// remoteCache.Put would leave the local Put blocked on the pipe reader
+// until pw.Close runs.
+func (l *CombinedCache) putBytes(ctx context.Context, actionID, outputID string, size int64, body *bytes.Reader) (diskPath string, err error) {
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(body, buf); err != nil {
+		return "", fmt.Errorf("reading in-memory put body: %w", err)
+	}
+
+	wg, _ := errgroup.WithContext(ctx)
+	wg.Go(func() error {
+		var err2 error
+		diskPath, err2 = l.localCache.Put(ctx, actionID, outputID, size, bytes.NewReader(buf))
+		return err2
+	})
+	// tolerate remote write errors
+	_, _ = l.putsMetrics.DoWithMeasure(size, func() (string, error) {
+		return "", l.remoteCache.Put(ctx, actionID, outputID, size, bytes.NewReader(buf))
+	})
+	if err := wg.Wait(); err != nil {
+		log.Printf("[%s]\terror: %v", l.localCache.Kind(), err)
+		return "", err
+	}
+	return diskPath, nil
 }
 
 func (l *CombinedCache) Close() error {
