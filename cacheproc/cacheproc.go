@@ -25,12 +25,9 @@ import (
 	"github.com/bradfitz/go-tool-cache/wire"
 )
 
-type cacherCtxKey string
-
 var (
 	ErrUnknownCommand = errors.New("unknown command")
 	ErrNoOutputID     = errors.New("no outputID")
-	requestIDKey      = cacherCtxKey("requestID")
 )
 
 // Process implements the cmd/go JSON protocol over stdin & stdout via three
@@ -68,8 +65,11 @@ func (p *Process) Run(ctx context.Context) error {
 		return err
 	}
 	defer func() {
-		_ = p.close()
+		// Wait for in-flight requests before closing the cache; otherwise a
+		// pending Put/Get can race with Close (e.g. sending on timeKeeper's
+		// closed metrics channel → panic).
 		_ = wg.Wait()
+		_ = p.close()
 	}()
 	for {
 		var req wire.Request
@@ -88,16 +88,15 @@ func (p *Process) Run(ctx context.Context) error {
 			// io.Reader that validates on EOF.
 			var bodyb []byte
 			if err := jd.Decode(&bodyb); err != nil {
-				log.Fatal(err)
+				return fmt.Errorf("decoding put body for req %d: %w", req.ID, err)
 			}
 			if int64(len(bodyb)) != req.BodySize {
-				log.Fatalf("only got %d bytes of declared %d", len(bodyb), req.BodySize)
+				return fmt.Errorf("put body for req %d: got %d bytes of declared %d", req.ID, len(bodyb), req.BodySize)
 			}
 			req.Body = bytes.NewReader(bodyb)
 		}
 		wg.Go(func() error {
 			res := &wire.Response{ID: req.ID}
-			ctx := context.WithValue(ctx, requestIDKey, &req)
 			if err := p.handleRequest(ctx, &req, res); err != nil {
 				res.Err = err.Error()
 			}
