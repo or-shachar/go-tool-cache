@@ -58,10 +58,14 @@ precedence over HTTP**.
 Set the following to enable the S3 remote cache:
 - `GOCACHE_S3_BUCKET` - Name of S3 bucket
 - `GOCACHE_AWS_REGION` - AWS Region of bucket
-- `GOCACHE_AWS_ACCESS_KEY` + `GOCACHE_AWS_SECRET_ACCESS_KEY` / `GOCACHE_AWS_CREDS_PROFILE` - Direct credentials or creds profile to use.
+- `GOCACHE_AWS_ACCESS_KEY` + `GOCACHE_AWS_SECRET_ACCESS_KEY` (optionally with `GOCACHE_AWS_SESSION_TOKEN` for STS/OIDC flows such as GitHub Actions)
+  / `GOCACHE_AWS_CREDS_PROFILE` - Direct credentials or creds profile to use.
+- `GOCACHE_S3_URL` - (Optional) Custom S3-compatible endpoint (e.g. MinIO, LocalStack). When set, the client uses path-style addressing. If `GOCACHE_AWS_REGION` is unset, `us-east-1` is used as a placeholder.
 - `GOCACHE_CACHE_KEY` - (Optional, default `v1`) Unique key
 
 The cache would be stored to `s3://<bucket>/cache/<cache_key>/<architecture>/<os>/`
+
+If `GOCACHE_S3_BUCKET` is set but credentials or region cannot be resolved, the cacher exits with an error — misconfigurations are no longer silently downgraded to local-only caching.
 
 #### HTTP
 
