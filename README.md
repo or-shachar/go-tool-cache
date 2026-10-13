@@ -50,8 +50,8 @@ cacher: closing; 808 gets (808 hits, 0 misses, 0 errors); 0 puts (0 errors)
 
 ### Remote backends
 
-At most one remote backend is used. If both are configured, **S3 takes
-precedence over HTTP**.
+At most one remote backend is used. If several are configured, **S3 takes
+precedence over GCS, and GCS over HTTP**.
 
 #### S3
 
@@ -66,6 +66,23 @@ Set the following to enable the S3 remote cache:
 The cache would be stored to `s3://<bucket>/cache/<cache_key>/<architecture>/<os>/`
 
 If `GOCACHE_S3_BUCKET` is set but credentials or region cannot be resolved, the cacher exits with an error — misconfigurations are no longer silently downgraded to local-only caching.
+
+#### GCS
+
+Set the following to enable the Google Cloud Storage remote cache:
+- `GOCACHE_GCS_BUCKET` - Name of GCS bucket
+- `GOCACHE_CACHE_KEY` - (Optional, default `v1`) Unique key
+
+Credentials come from [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials):
+`GOOGLE_APPLICATION_CREDENTIALS`, `gcloud auth application-default login`, or the
+GCE/GKE metadata server (e.g. GKE Workload Identity). They need
+`storage.objects.get` and `storage.objects.create` on the bucket (`roles/storage.objectUser`).
+Set `STORAGE_EMULATOR_HOST` to use an emulator instead.
+
+The cache would be stored to `gs://<bucket>/cache/<cache_key>/<architecture>/<os>/`.
+Entries are write-once: an existing object is never overwritten.
+
+If `GOCACHE_GCS_BUCKET` is set but no credentials can be found, the cacher exits with an error.
 
 #### HTTP
 

@@ -3,6 +3,9 @@ package cachers
 import (
 	"context"
 	"io"
+	"os"
+	"path"
+	"runtime"
 )
 
 // Cache is the interface implemented by all caches.
@@ -25,4 +28,18 @@ type RemoteCache interface {
 	Cache
 	Get(ctx context.Context, actionID string) (outputID string, size int64, output io.ReadCloser, err error)
 	Put(ctx context.Context, actionID, outputID string, size int64, body io.Reader) (err error)
+}
+
+// remotePrefix is where a remote cache stores its objects:
+// cache/<cacheKey>/<GOARCH>/<GOOS>, using the build's target platform.
+func remotePrefix(cacheKey string) string {
+	goarch := os.Getenv("GOARCH")
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	goos := os.Getenv("GOOS")
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	return path.Join("cache", cacheKey, goarch, goos)
 }
