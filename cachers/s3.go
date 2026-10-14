@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
-	"path"
-	"runtime"
 	"sync"
 
 	"github.com/aws/smithy-go"
@@ -129,21 +126,10 @@ func (s *S3Cache) Close() error {
 }
 
 func NewS3Cache(client s3Client, bucketName string, cacheKey string, verbose bool) *S3Cache {
-	// get target architecture
-	goarch := os.Getenv("GOARCH")
-	if goarch == "" {
-		goarch = runtime.GOARCH
-	}
-	// get target operating system
-	goos := os.Getenv("GOOS")
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	prefix := path.Join("cache", cacheKey, goarch, goos)
 	cache := &S3Cache{
 		s3Client: client,
 		bucket:   bucketName,
-		prefix:   prefix,
+		prefix:   remotePrefix(cacheKey),
 		verbose:  verbose,
 	}
 	return cache

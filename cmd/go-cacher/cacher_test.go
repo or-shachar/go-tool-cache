@@ -95,3 +95,26 @@ func TestMaybeHttpCache(t *testing.T) {
 		assert.NotNil(t, client)
 	})
 }
+
+func TestMaybeGCSCache(t *testing.T) {
+	t.Run("returns (nil, nil) when bucket is unset (GCS not configured)", func(t *testing.T) {
+		client, err := maybeGCSCache(context.TODO(), &mapEnv{m: map[string]string{}})
+		assert.NoError(t, err)
+		assert.Nil(t, client)
+	})
+
+	t.Run("returns error when bucket set but no credentials are found", func(t *testing.T) {
+		t.Setenv("STORAGE_EMULATOR_HOST", "")
+		t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", t.TempDir()+"/missing.json")
+		client, err := maybeGCSCache(context.TODO(), &mapEnv{m: map[string]string{envVarGCSBucketName: "bucket"}})
+		assert.Error(t, err)
+		assert.Nil(t, client)
+	})
+
+	t.Run("succeeds against an emulator without credentials", func(t *testing.T) {
+		t.Setenv("STORAGE_EMULATOR_HOST", "localhost:4443")
+		client, err := maybeGCSCache(context.TODO(), &mapEnv{m: map[string]string{envVarGCSBucketName: "bucket"}})
+		assert.NoError(t, err)
+		assert.NotNil(t, client)
+	})
+}

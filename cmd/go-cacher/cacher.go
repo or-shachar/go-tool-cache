@@ -13,10 +13,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"cloud.google.com/go/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"golang.org/x/oauth2/google"
 
 	"github.com/bradfitz/go-tool-cache/cacheproc"
 	"github.com/bradfitz/go-tool-cache/cachers"
@@ -36,13 +38,20 @@ const (
 	envVarS3AwsSessionToken    = "GOCACHE_AWS_SESSION_TOKEN"
 	envVarS3AwsCredsProfile    = "GOCACHE_AWS_CREDS_PROFILE"
 	envVarS3BucketName         = "GOCACHE_S3_BUCKET"
-	envVarS3CacheKey           = "GOCACHE_CACHE_KEY"
+
+	// Remote cache namespace, shared by the S3 and GCS caches
+	envVarCacheKey = "GOCACHE_CACHE_KEY"
 
 	// S3-compatible endpoint (e.g. MinIO, LocalStack).
 	// When set, the S3 client uses path-style addressing and this endpoint
 	// instead of the AWS-resolved one. If GOCACHE_AWS_REGION is empty,
 	// a dummy region of "us-east-1" is used so the SDK accepts the config.
 	envVarS3CacheURL = "GOCACHE_S3_URL"
+
+	// GCS cache. Credentials come from Application Default Credentials
+	// (GOOGLE_APPLICATION_CREDENTIALS, gcloud, or the GCE/GKE metadata server).
+	// STORAGE_EMULATOR_HOST points the client at an emulator.
+	envVarGCSBucketName = "GOCACHE_GCS_BUCKET"
 
 	// HTTP cache - optional cache server HTTP prefix (scheme and authority only);
 	envVarHttpCacheServerBase = "GOCACHE_HTTP_SERVER_BASE"
@@ -119,17 +128,39 @@ func maybeS3Cache(ctx context.Context, env Env) (cachers.RemoteCache, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s set but S3 cache cannot be configured: %w", envVarS3BucketName, err)
 	}
-	cacheKey := env.Get(envVarS3CacheKey)
-	if cacheKey == "" {
-		cacheKey = defaultCacheKey
-	}
 	s3Client := s3.NewFromConfig(*awsConfig, func(o *s3.Options) {
 		if u := env.Get(envVarS3CacheURL); u != "" {
 			o.BaseEndpoint = &u
 			o.UsePathStyle = true
 		}
 	})
-	return cachers.NewS3Cache(s3Client, bucket, cacheKey, *verbose), nil
+	return cachers.NewS3Cache(s3Client, bucket, getCacheKey(env), *verbose), nil
+}
+
+func maybeGCSCache(ctx context.Context, env Env) (cachers.RemoteCache, error) {
+	bucket := env.Get(envVarGCSBucketName)
+	if bucket == "" {
+		return nil, nil
+	}
+	// storage.NewClient tolerates missing credentials and fails on first use,
+	// which would downgrade every build to local-only; check them up front.
+	if os.Getenv("STORAGE_EMULATOR_HOST") == "" {
+		if _, err := google.FindDefaultCredentials(ctx, storage.ScopeReadWrite); err != nil {
+			return nil, fmt.Errorf("%s set but GCS cache cannot be configured: %w", envVarGCSBucketName, err)
+		}
+	}
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%s set but GCS cache cannot be configured: %w", envVarGCSBucketName, err)
+	}
+	return cachers.NewGCSCache(client, bucket, getCacheKey(env), *verbose), nil
+}
+
+func getCacheKey(env Env) string {
+	if cacheKey := env.Get(envVarCacheKey); cacheKey != "" {
+		return cacheKey
+	}
+	return defaultCacheKey
 }
 
 func getCache(ctx context.Context, env Env, verbose bool) cachers.LocalCache {
@@ -139,6 +170,12 @@ func getCache(ctx context.Context, env Env, verbose bool) cachers.LocalCache {
 	remote, err := maybeS3Cache(ctx, env)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if remote == nil {
+		remote, err = maybeGCSCache(ctx, env)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	if remote == nil {
 		remote, err = maybeHttpCache(env)
