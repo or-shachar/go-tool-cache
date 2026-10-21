@@ -123,3 +123,25 @@ func NewRemoteCacheStats(cache RemoteCache) *RemoteCacheWithCounts {
 
 var _ LocalCache = &LocalCacheWithCounts{}
 var _ RemoteCache = &RemoteCacheWithCounts{}
+
+// CountsVisitor is implemented by cache types that have per-layer counters
+// worth surfacing (either directly or recursively through wrapped caches).
+// Metrics collectors call VisitCounts to walk the chain and emit one
+// observation per Counts-bearing layer.
+type CountsVisitor interface {
+	VisitCounts(fn func(kind string, c *Counts))
+}
+
+func (l *LocalCacheWithCounts) VisitCounts(fn func(kind string, c *Counts)) {
+	fn(l.cache.Kind(), &l.Counts)
+	if v, ok := l.cache.(CountsVisitor); ok {
+		v.VisitCounts(fn)
+	}
+}
+
+func (r *RemoteCacheWithCounts) VisitCounts(fn func(kind string, c *Counts)) {
+	fn(r.cache.Kind(), &r.Counts)
+	if v, ok := r.cache.(CountsVisitor); ok {
+		v.VisitCounts(fn)
+	}
+}
